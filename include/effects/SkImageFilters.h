@@ -15,6 +15,8 @@
 #include "include/core/SkPicture.h"
 #include "include/core/SkRect.h"
 #include "include/core/SkTileMode.h"
+#include "include/core/SkTypes.h"
+#include "include/effects/SkRuntimeEffect.h"
 
 #include <cstddef>
 
@@ -152,7 +154,8 @@ public:
      *  @param yChannelSelector RGBA channel that encodes the y displacement per pixel.
      *  @param scale            Scale applied to displacement extracted from image.
      *  @param displacement     The filter defining the displacement image, or null to use source.
-     *  @param color            The filter providing the color pixels to be displaced.
+     *  @param color            The filter providing the color pixels to be displaced. If null,
+     *                          it will use the source.
      *  @param cropRect         Optional rectangle that crops the color input and output.
      */
     static sk_sp<SkImageFilter> DisplacementMap(SkColorChannel xChannelSelector,
@@ -308,17 +311,6 @@ public:
                                        const CropRect& cropRect = {});
 
     /**
-     *  Create a filter that fills the output with the given paint.
-     *  @param paint    The paint to fill
-     *  @param cropRect Optional rectangle that will be filled. If null, the source bitmap's bounds
-     *                  are filled even though the source bitmap itself is not used.
-     *
-     * DEPRECATED: Use Shader() instead, since many features of SkPaint are ignored when filling
-     *             the target output, and paint color/alpha can be emulated with SkShaders::Color().
-     */
-    static sk_sp<SkImageFilter> Paint(const SkPaint& paint, const CropRect& cropRect = {});
-
-    /**
      *  Create a filter that produces the SkPicture as its output, drawn into targetRect. Note that
      *  the targetRect is not the same as the SkIRect cropRect that many filters accept. Returns
      *  null if 'pic' is null.
@@ -331,6 +323,46 @@ public:
         SkRect target = pic ? pic->cullRect() : SkRect::MakeEmpty();
         return Picture(std::move(pic), target);
     }
+
+#ifdef SK_ENABLE_SKSL
+    /**
+     *  Create a filter that fills the output with the per-pixel evaluation of the SkShader produced
+     *  by the SkRuntimeShaderBuilder. The shader is defined in the image filter's local coordinate
+     *  system, so it will automatically be affected by SkCanvas' transform.
+     *
+     *  @param builder         The builder used to produce the runtime shader, that will in turn
+     *                         fill the result image
+     *  @param childShaderName The name of the child shader defined in the builder that will be
+     *                         bound to the input param (or the source image if the input param
+     *                         is null).  If empty, the builder can have exactly one child shader,
+     *                         which automatically binds the input param.
+     *  @param input           The image filter that will be provided as input to the runtime
+     *                         shader. If null the implicit source image is used instead
+     */
+    static sk_sp<SkImageFilter> RuntimeShader(const SkRuntimeShaderBuilder& builder,
+                                              std::string_view childShaderName,
+                                              sk_sp<SkImageFilter> input);
+
+    /**
+     *  Create a filter that fills the output with the per-pixel evaluation of the SkShader produced
+     *  by the SkRuntimeShaderBuilder. The shader is defined in the image filter's local coordinate
+     *  system, so it will automatically be affected by SkCanvas' transform.
+     *
+     *  @param builder          The builder used to produce the runtime shader, that will in turn
+     *                          fill the result image
+     *  @param childShaderNames The names of the child shaders defined in the builder that will be
+     *                          bound to the input params (or the source image if the input param
+     *                          is null). If any name is null, or appears more than once, factory
+     *                          fails and returns nullptr.
+     *  @param inputs           The image filters that will be provided as input to the runtime
+     *                          shader. If any are null, the implicit source image is used instead.
+     *  @param inputCount       How many entries are present in 'childShaderNames' and 'inputs'.
+     */
+    static sk_sp<SkImageFilter> RuntimeShader(const SkRuntimeShaderBuilder& builder,
+                                              std::string_view childShaderNames[],
+                                              const sk_sp<SkImageFilter> inputs[],
+                                              int inputCount);
+#endif  // SK_ENABLE_SKSL
 
     enum class Dither : bool {
         kNo = false,

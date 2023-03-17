@@ -8,9 +8,12 @@
 #ifndef SkData_DEFINED
 #define SkData_DEFINED
 
-#include <stdio.h>
-
 #include "include/core/SkRefCnt.h"
+#include "include/private/base/SkAPI.h"
+#include "include/private/base/SkAssert.h"
+
+#include <cstdint>
+#include <cstdio>
 
 class SkStream;
 
@@ -85,6 +88,12 @@ public:
      *  to write into the buffer, but this must be done before another ref() is made.
      */
     static sk_sp<SkData> MakeUninitialized(size_t length);
+
+    /**
+     *  Create a new data with zero-initialized contents. The caller should call writable_data()
+     *  to write into the buffer, but this must be done before another ref() is made.
+     */
+    static sk_sp<SkData> MakeZeroInitialized(size_t length);
 
     /**
      *  Create a new dataref by copying the specified c-string

@@ -8,73 +8,52 @@
 #ifndef SKSL_STRING
 #define SKSL_STRING
 
-#include "include/core/SkStringView.h"
+#include "include/core/SkTypes.h"
 #include "include/private/SkSLDefines.h"
-#include <cstring>
+
 #include <stdarg.h>
 #include <string>
-
-#ifndef SKSL_STANDALONE
-#include "include/core/SkString.h"
-#endif
+#include <string_view>
 
 namespace SkSL {
 
-class String;
+bool stod(std::string_view s, SKSL_FLOAT* value);
+bool stoi(std::string_view s, SKSL_INT* value);
 
-class SK_API String : public std::string {
-public:
-    using std::string::string;
+namespace String {
 
-    explicit String(std::string s) : INHERITED(std::move(s)) {}
-    explicit String(skstd::string_view s) : INHERITED(s.data(), s.length()) {}
-    // TODO(johnstiles): add operator skstd::string_view
+std::string printf(const char* fmt, ...) SK_PRINTF_LIKE(1, 2);
+void appendf(std::string* str, const char* fmt, ...) SK_PRINTF_LIKE(2, 3);
+void vappendf(std::string* str, const char* fmt, va_list va) SK_PRINTF_LIKE(2, 0);
 
-    static String printf(const char* fmt, ...) SK_PRINTF_LIKE(1, 2);
-    void appendf(const char* fmt, ...) SK_PRINTF_LIKE(2, 3);
-    void vappendf(const char* fmt, va_list va);
+inline auto Separator() {
+    // This returns a lambda which emits "" the first time it is called, and ", " every subsequent
+    // time it is called.
+    struct Output {
+        const std::string fSpace, fComma;
+    };
+    static const Output* kOutput = new Output{{}, {", "}};
 
-    bool starts_with(const char prefix[]) const {
-        return skstd::string_view(data(), size()).starts_with(prefix);
-    }
-    bool ends_with(const char suffix[]) const {
-        return skstd::string_view(data(), size()).ends_with(suffix);
-    }
-
-    bool consumeSuffix(const char suffix[]);
-
-    String operator+(const char* s) const;
-    String operator+(const String& s) const;
-    String operator+(skstd::string_view s) const;
-    String& operator+=(char c);
-    String& operator+=(const char* s);
-    String& operator+=(const String& s);
-    String& operator+=(skstd::string_view s);
-    friend String operator+(const char* s1, const String& s2);
-
-private:
-    using INHERITED = std::string;
-};
-
-String operator+(skstd::string_view left, skstd::string_view right);
-
-String to_string(double value);
-String to_string(int32_t value);
-String to_string(uint32_t value);
-String to_string(int64_t value);
-String to_string(uint64_t value);
-
-bool stod(const skstd::string_view& s, SKSL_FLOAT* value);
-bool stoi(const skstd::string_view& s, SKSL_INT* value);
-
-} // namespace SkSL
-
-namespace std {
-    template<> struct hash<SkSL::String> {
-        size_t operator()(const SkSL::String& s) const {
-            return hash<std::string>{}(s);
+    return [firstSeparator = true]() mutable -> const std::string& {
+        if (firstSeparator) {
+            firstSeparator = false;
+            return kOutput->fSpace;
+        } else {
+            return kOutput->fComma;
         }
     };
-} // namespace std
+}
+
+}  // namespace String
+}  // namespace SkSL
+
+namespace skstd {
+
+// We use a custom to_string(float|double) which ignores locale settings and writes `1.0` instead
+// of `1.00000`.
+std::string to_string(float value);
+std::string to_string(double value);
+
+}  // namespace skstd
 
 #endif

@@ -10,8 +10,12 @@
 
 #include "include/core/SkRefCnt.h"
 
+#include <memory>
+
 class SkData;
 class SkImageGenerator;
+class SkOpenTypeSVGDecoder;
+class SkPath;
 class SkTraceMemoryDump;
 
 class SK_API SkGraphics {
@@ -22,9 +26,6 @@ public:
      *  Init() is thread-safe and idempotent.
      */
     static void Init();
-
-    // We're in the middle of cleaning this up.
-    static void Term() {}
 
     /**
      *  Return the max number of bytes that should be used by the font cache.
@@ -117,16 +118,6 @@ public:
      */
     static void PurgeAllCaches();
 
-    /**
-     *  Applications with command line options may pass optional state, such
-     *  as cache sizes, here, for instance:
-     *  font-cache-limit=12345678
-     *
-     *  The flags format is name=value[;name=value...] with no spaces.
-     *  This format is subject to change.
-     */
-    static void SetFlags(const char* flags);
-
     typedef std::unique_ptr<SkImageGenerator>
                                             (*ImageGeneratorFromEncodedDataFactory)(sk_sp<SkData>);
 
@@ -141,9 +132,31 @@ public:
                     SetImageGeneratorFromEncodedDataFactory(ImageGeneratorFromEncodedDataFactory);
 
     /**
+     *  To draw OpenType SVG data, Skia will look at this runtime function pointer. If this function
+     *  pointer is set, the SkTypeface implementations which support OpenType SVG will call this
+     *  function to create an SkOpenTypeSVGDecoder to decode the OpenType SVG and draw it as needed.
+     *  If this function is not set, the SkTypeface implementations will generally not support
+     *  OpenType SVG and attempt to use other glyph representations if available.
+     */
+    using OpenTypeSVGDecoderFactory =
+            std::unique_ptr<SkOpenTypeSVGDecoder> (*)(const uint8_t* svg, size_t length);
+    static OpenTypeSVGDecoderFactory SetOpenTypeSVGDecoderFactory(OpenTypeSVGDecoderFactory);
+    static OpenTypeSVGDecoderFactory GetOpenTypeSVGDecoderFactory();
+
+    /**
      *  Call early in main() to allow Skia to use a JIT to accelerate CPU-bound operations.
      */
     static void AllowJIT();
+
+    /**
+     *  To override the default AA algorithm choice in the CPU backend, provide a function that
+     *  returns whether to use analytic (true) or supersampled (false) for a given path.
+     *
+     *  NOTE: This is a temporary API, intended for migration of all clients to one algorithm,
+     *        and should not be used.
+     */
+    typedef bool (*PathAnalyticAADeciderProc)(const SkPath&);
+    static void SetPathAnalyticAADecider(PathAnalyticAADeciderProc);
 };
 
 class SkAutoGraphics {

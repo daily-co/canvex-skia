@@ -1,8 +1,16 @@
-package(default_visibility = ["//:__subpackages__"])
+load("//bazel:skia_rules.bzl", "exports_files_legacy", "skia_filegroup")
 
-filegroup(
-    name = "hdrs",
+licenses(["notice"])
+
+exports_files_legacy()
+
+skia_filegroup(
+    name = "public_hdrs",
     srcs = [
         "SkUserConfig.h",
+    ],
+    visibility = [
+        "//include:__pkg__",
+        "//src:__pkg__",
     ],
 )

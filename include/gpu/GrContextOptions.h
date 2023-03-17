@@ -13,13 +13,14 @@
 #include "include/core/SkTypes.h"
 #include "include/gpu/GrDriverBugWorkarounds.h"
 #include "include/gpu/GrTypes.h"
-#include "include/private/GrTypesPriv.h"
+#include "include/gpu/ShaderErrorHandler.h"
+#include "include/private/gpu/ganesh/GrTypesPriv.h"
 
 #include <vector>
 
 class SkExecutor;
 
-#if SK_SUPPORT_GPU
+#if defined(SK_GANESH)
 struct SK_API GrContextOptions {
     enum class Enable {
         /** Forces an option to be disabled. */
@@ -70,22 +71,7 @@ struct SK_API GrContextOptions {
         PersistentCache& operator=(const PersistentCache&) = delete;
     };
 
-    /**
-     * Abstract class to report errors when compiling shaders. If fShaderErrorHandler is present,
-     * it will be called to report any compilation failures. Otherwise, failures will be reported
-     * via SkDebugf and asserts.
-     */
-    class SK_API ShaderErrorHandler {
-    public:
-        virtual ~ShaderErrorHandler() = default;
-
-        virtual void compileError(const char* shader, const char* errors) = 0;
-
-    protected:
-        ShaderErrorHandler() = default;
-        ShaderErrorHandler(const ShaderErrorHandler&) = delete;
-        ShaderErrorHandler& operator=(const ShaderErrorHandler&) = delete;
-    };
+    using ShaderErrorHandler = skgpu::ShaderErrorHandler;
 
     GrContextOptions() {}
 
@@ -94,8 +80,9 @@ struct SK_API GrContextOptions {
 
     /**
      * Controls whether we check for GL errors after functions that allocate resources (e.g.
-     * glTexImage2D), for shader compilation success, and program link success. Ignored on
-     * backends other than GL.
+     * glTexImage2D), at the end of a GPU submission, or checking framebuffer completeness. The
+     * results of shader compilation and program linking are always checked, regardless of this
+     * option. Ignored on backends other than GL.
      */
     Enable fSkipGLErrorChecks = Enable::kDefault;
 
@@ -184,13 +171,6 @@ struct SK_API GrContextOptions {
     bool fAvoidStencilBuffers = false;
 
     /**
-     * If true, texture fetches from mip-mapped textures will be biased to read larger MIP levels.
-     * This has the effect of sharpening those textures, at the cost of some aliasing, and possible
-     * performance impact.
-     */
-    bool fSharpenMipmappedTextures = false;
-
-    /**
      * Enables driver workaround to use draws instead of HW clears, e.g. glClear on the GL backend.
      */
     Enable fUseDrawInsteadOfClear = Enable::kDefault;
@@ -266,9 +246,22 @@ struct SK_API GrContextOptions {
     bool fSuppressMipmapSupport = false;
 
     /**
+     * If true, the TessellationPathRenderer will not be used for path rendering.
+     * If false, will fallback to any driver workarounds, if set.
+     */
+    bool fDisableTessellationPathRenderer = false;
+
+    /**
      * If true, and if supported, enables hardware tessellation in the caps.
+     * DEPRECATED: This value is ignored; experimental hardware tessellation is always disabled.
      */
     bool fEnableExperimentalHardwareTessellation = false;
+
+    /**
+     * If true, then add 1 pixel padding to all glyph masks in the atlas to support bi-lerp
+     * rendering of all glyphs. This must be set to true to use Slugs.
+     */
+    bool fSupportBilerpFromGlyphAtlas = false;
 
     /**
      * Uses a reduced variety of shaders. May perform less optimally in steady state but can reduce
@@ -276,15 +269,39 @@ struct SK_API GrContextOptions {
      */
     bool fReducedShaderVariations = false;
 
+    /**
+     * If true, then allow to enable MSAA on new Intel GPUs.
+     */
+    bool fAllowMSAAOnNewIntel = false;
+
+    /**
+     * Currently on ARM Android we disable the use of GL TexStorage because of memory regressions.
+     * However, some clients may still want to use TexStorage. For example, TexStorage support is
+     * required for creating protected textures.
+     *
+     * This flag has no impact on non GL backends.
+     */
+    bool fAlwaysUseTexStorageWhenAvailable = false;
+
+    /**
+     * Optional callback that can be passed into the GrDirectContext which will be called when the
+     * GrDirectContext is about to be destroyed. When this call is made, it will be safe for the
+     * client to delete the GPU backend context that is backing the GrDirectContext. The
+     * GrDirectContextDestroyedContext will be passed back to the client in the callback.
+     */
+    GrDirectContextDestroyedContext fContextDeleteContext = nullptr;
+    GrDirectContextDestroyedProc fContextDeleteProc = nullptr;
+
 #if GR_TEST_UTILS
     /**
      * Private options that are only meant for testing within Skia's tools.
      */
 
     /**
-     * Experimental: Should the new version of the GPU backend be used?
+     * Testing-only mode to exercise allocation failures in the flush-time callback objects.
+     * For now it only simulates allocation failure during the preFlush callback.
      */
-    Enable fUseSkGpuV2 = Enable::kDefault;
+    bool fFailFlushTimeCallbacks = false;
 
     /**
      * Prevents use of dual source blending, to test that all xfer modes work correctly without it.
@@ -301,12 +318,6 @@ struct SK_API GrContextOptions {
      * Prevents the use of framebuffer fetches, for testing dst reads and texture barriers.
      */
     bool fSuppressFramebufferFetch = false;
-
-    /**
-     * If greater than zero and less than the actual hardware limit, overrides the maximum number of
-     * tessellation segments supported by the caps.
-     */
-    int  fMaxTessellationSegmentsOverride = 0;
 
     /**
      * If true, then all paths are processed as if "setIsVolatile" had been called.
@@ -345,11 +356,6 @@ struct SK_API GrContextOptions {
      * A value of -1 means use the default limit value.
      */
     int fResourceCacheLimitOverride = -1;
-
-    /**
-     * If true, then always try to use hardware tessellation, regardless of how small a path may be.
-     */
-    bool fAlwaysPreferHardwareTessellation = false;
 
     /**
      * Maximum width and height of internal texture atlases.
